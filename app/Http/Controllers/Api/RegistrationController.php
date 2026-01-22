@@ -3,48 +3,71 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Registration;
 use Illuminate\Http\Request;
+use App\Models\Event;
+use App\Models\User;
 
 class RegistrationController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Admin check
      */
-    public function index()
+    protected function checkAdmin(Request $request)
     {
-        //
+        return $request->user()->is_admin ?? false;
     }
 
     /**
-     * Store a newly created resource in storage.
+     * User regisztrál az eseményre
      */
-    public function store(Request $request)
+    public function register(Request $request, Event $event)
     {
-        //
+        $user = $request->user();
+
+        // Már regisztrált?
+        if ($event->users()->where('user_id', $user->id)->exists()) {
+            return response()->json(['message' => 'Már regisztráltál erre az eseményre.'], 400);
+        }
+
+        $event->users()->attach($user->id, [
+            'status' => 'pending',
+            'registered_at' => now(),
+        ]);
+
+        return response()->json(['message' => 'Sikeres regisztráció']);
     }
 
     /**
-     * Display the specified resource.
+     * User törli a saját regisztrációját (soft delete)
      */
-    public function show(Registration $registration)
+    public function unregister(Request $request, Event $event)
     {
-        //
+        $user = $request->user();
+
+        if (!$event->users()->where('user_id', $user->id)->exists()) {
+            return response()->json(['message' => 'Nincs regisztrációd erre az eseményre'], 404);
+        }
+
+        $event->users()->updateExistingPivot($user->id, ['deleted_at' => now()]);
+
+        return response()->json(['message' => 'Regisztráció törölve']);
     }
 
     /**
-     * Update the specified resource in storage.
+     * Admin törli bármelyik felhasználót az eseményről (soft delete)
      */
-    public function update(Request $request, Registration $registration)
+    public function adminRemoveUser(Request $request, Event $event, User $user)
     {
-        //
-    }
+        if (!$this->checkAdmin($request)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Registration $registration)
-    {
-        //
+        if (!$event->users()->where('user_id', $user->id)->exists()) {
+            return response()->json(['message' => 'Ez a felhasználó nincs regisztrálva erre az eseményre'], 404);
+        }
+
+        $event->users()->updateExistingPivot($user->id, ['deleted_at' => now()]);
+
+        return response()->json(['message' => 'Felhasználó eltávolítva az eseményről']);
     }
 }
